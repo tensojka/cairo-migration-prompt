@@ -1,0 +1,317 @@
+Migrating from c0, a smart contract language inspired by Python, to c1, which is a complete rewrite, inspired by Rust.
+
+c1 ( = <c1>) has a few peculiarities you must attend to. Comparison operations are not supported on the felt (c0) = felt252 (c1) data type, you must convert to uint first. As u256 is represented as two separate felts, it's better to use u128 for efficiency. Arithmetic operations are defined only between variables of the same data type, not between say u64 and u128, so conversions are often needed. There are the following unsigned integer data types in c1: u8 u16 u32 u64 u128 u256, they automatically check for overflows.
+
+<c0>
+
+func get_proposal_details{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
+    prop_id: felt
+) -> (res: PropDetails) {
+    let (res) = proposal_details.read(prop_id);
+    return (res=res);
+}
+
+</c0><c1>
+
+fn get_proposal_details(prop_id: felt252) -> PropDetails {
+    proposal_details::read(prop_id)
+}
+
+</c1><c0>
+
+func get_vote_counts{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
+    prop_id: felt
+) -> (res: VoteCounts) {
+    let (yay) = proposal_total_yay.read(prop_id);
+    let (nay) = proposal_total_nay.read(prop_id);
+    return (res=VoteCounts(yay=yay, nay=nay));
+}
+
+</c0><c1>
+
+fn get_vote_counts(prop_id: felt252) -> (felt252, felt252) {
+    let yay = proposal_total_yay::read(prop_id);
+    let nay = proposal_total_nay::read(prop_id);
+
+    (yay, nay)
+}
+
+</c1><c0>
+
+func get_free_prop_id{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
+) -> (freeid: felt) {
+    return _get_free_prop_id(0);
+}
+
+func _get_free_prop_id{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
+    currid: felt
+) -> (freeid: felt) {
+    let (res) = proposal_vote_ends.read(currid); // shorter values than _details
+    if (res == 0) {
+        return (freeid = currid);
+    }else{
+        return _get_free_prop_id(currid + 1);
+    }
+}
+
+</c0><c1>
+
+fn get_free_prop_id() -> felt252 {
+    _get_free_prop_id(0)
+}
+
+fn _get_free_prop_id(currid: felt252) -> felt252 {
+    let res = proposal_vote_ends::read(currid);
+
+    if res == 0 {
+        currid
+    } else {
+        _get_free_prop_id(currid + 1)
+    }
+}
+
+</c1><c0>
+
+func assert_correct_contract_type{range_check_ptr}(contract_type: ContractType) {
+    with_attr error_message("wrong contract type, must be 0, 1 or 2"){
+        assert_nn_le(contract_type, 2); // either 0, 1 or 2
+    }
+    return ();
+}
+
+func assert_voting_in_progress{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(prop_id: felt){
+    let (end_block_number) = proposal_vote_ends.read(prop_id);
+    with_attr error_message("voting not yet started, prop_id not found"){
+        assert_not_zero(end_block_number);
+    }
+    let (curr_block_number) = get_block_number();
+    with_attr error_message("voting already concluded"){
+        // yes truly no assert_lt in Cairo 0.10.
+        let block_diff = end_block_number - curr_block_number;
+        assert_not_zero(block_diff);
+        assert_nn(block_diff);
+    }
+    return ();
+}
+
+</c0><c1>
+
+fn assert_correct_contract_type(contract_type: ContractType) {
+    let contract_type_u: u64 = contract_type.try_into().unwrap();
+    assert(contract_type_u <= 2_u64, 'invalid contract type')
+}
+
+fn assert_voting_in_progress(prop_id: felt252) {
+    let end_block_number_felt: felt252 = proposal_vote_ends::read(prop_id);
+    let end_block_number: u64 = end_block_number_felt.try_into().unwrap();
+    assert(end_block_number != 0_u64, 'prop_id not found');
+
+    let current_block_number: u64 = get_block_info().unbox().block_number;
+
+    assert(end_block_number > current_block_number, 'voting concluded')
+}
+
+</c1><c0>
+
+func submit_proposal{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
+    impl_hash: felt, to_upgrade: ContractType
+) -> (prop_id: felt) {
+
+    assert_correct_contract_type(to_upgrade);
+    let (gov_token_addr) = governance_token_address.read();
+    let (caller_addr) = get_caller_address();
+
+    let (caller_balance) = IERC20.balanceOf(contract_address=gov_token_addr, account=caller_addr);
+    let (total_supply) = IERC20.totalSupply(contract_address=gov_token_addr);
+
+    with_attr error_message("Not enough tokens to submit proposal") {
+        let share = Uint256(low = NEW_PROPOSAL_QUORUM, high = 0);
+        let (caller_balance_multiplied, carry) = uint256_mul(caller_balance, share);
+        assert carry.low = 0;
+        assert carry.high = 0;
+        assert_uint256_lt(total_supply, caller_balance_multiplied);
+    }
+
+    // Write state changes to storage vars
+    let (prop_id) = get_free_prop_id();
+    let prop_details = PropDetails(
+        impl_hash=impl_hash,
+        to_upgrade=to_upgrade
+    );
+    proposal_details.write(prop_id, prop_details);
+
+    let (curr_block_number) = get_block_number();
+    let end_block_number = curr_block_number + PROPOSAL_VOTING_TIME_BLOCKS;
+    proposal_vote_ends.write(prop_id, end_block_number);
+
+    Proposed.emit(prop_id, impl_hash, to_upgrade);
+
+    return (prop_id=prop_id);
+}
+
+</c0><c1>
+
+fn submit_proposal(impl_hash: felt252, to_upgrade: ContractType) -> felt252 {
+    assert_correct_contract_type(to_upgrade);
+    let govtoken_addr = governance_token_address::read();
+    let caller = get_caller_address();
+    let caller_balance: u128 = IERC20Dispatcher {
+        contract_address: govtoken_addr
+    }.balanceOf(caller).low;
+    let total_supply = IERC20Dispatcher { contract_address: govtoken_addr }.totalSupply();
+    let res: u256 = as_u256(
+        0_u128, caller_balance * constants::NEW_PROPOSAL_QUORUM
+    ); // TODO use such multiplication that u128 * u128 = u256
+    assert(total_supply < res, 'not enough tokens to submit');
+
+    let prop_id = get_free_prop_id();
+    let prop_details = PropDetails { impl_hash: impl_hash, to_upgrade: to_upgrade };
+    proposal_details::write(prop_id, prop_details);
+
+    let current_block_number: u64 = get_block_info().unbox().block_number;
+    let end_block_number: BlockNumber = (current_block_number
+        + constants::PROPOSAL_VOTING_TIME_BLOCKS).into();
+    proposal_vote_ends::write(prop_id, end_block_number);
+
+    Governance::Proposed(prop_id, impl_hash, to_upgrade);
+    prop_id
+}
+
+</c1><c0>
+
+func vote{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
+    prop_id: felt,
+    opinion: felt
+) {
+    // Checks
+    with_attr error_message("opinion must be either 1 = yay or -1 = nay"){
+        assert_not_zero(opinion);
+        assert_le(opinion, 1);
+        assert_le(-1, opinion);
+    }
+    let (gov_token_addr) = governance_token_address.read();
+    let (caller_addr) = get_caller_address();
+    let (curr_votestatus) = proposal_voted_by.read(prop_id, caller_addr);
+    with_attr error_message("already voted"){
+        assert curr_votestatus = 0;
+    }
+    
+    let (caller_balance) = IERC20.balanceOf(contract_address=gov_token_addr, account=caller_addr);
+    with_attr error_message("governance token balance is zero or erroneous"){
+        assert caller_balance.high = 0; // we store votes in felts, conversions will be done with C1.0 rewrite
+        assert_not_zero(caller_balance.low);
+    }
+
+    
+    assert_voting_in_progress(prop_id);
+
+    // Cast vote
+    proposal_voted_by.write(prop_id, caller_addr, opinion);
+    if(opinion == -1){
+        let (curr_votes) = proposal_total_nay.read(prop_id);
+        let new_votes = curr_votes + caller_balance.low;
+        assert_nn(new_votes);
+        proposal_total_nay.write(prop_id, new_votes);
+    }else{
+        let (curr_votes) = proposal_total_yay.read(prop_id);
+        let new_votes = curr_votes + caller_balance.low;
+        assert_nn(new_votes);
+        proposal_total_yay.write(prop_id, new_votes);
+    }
+    Voted.emit(prop_id, caller_addr, opinion);
+    return ();
+}
+
+</c0><c1>
+
+fn vote(prop_id: felt252, opinion: felt252) {
+    // Checks
+    // This is quite awful and a mistake by me, will be fixed down the line.
+    let MINUS_ONE: felt252 =
+        3618502788666131213697322783095070105623107215331596699973092056135872020480;
+    assert(opinion == MINUS_ONE | opinion == 1, 'opinion must be either 1 or -1');
+    let gov_token_addr = governance_token_address::read();
+    let caller_addr = get_caller_address();
+    let curr_vote_status: felt252 = proposal_voted_by::read((prop_id, caller_addr));
+    assert(curr_vote_status == 0, 'already voted');
+
+    let caller_balance_u256: u256 = IERC20Dispatcher {
+        contract_address: gov_token_addr
+    }.balanceOf(caller_addr);
+    assert(caller_balance_u256.high == 0_u128, 'CARM balance > u128');
+    let caller_balance: u128 = caller_balance_u256.low;
+    assert(caller_balance != 0_u128, 'CARM balance is zero');
+
+    assert_voting_in_progress(prop_id);
+
+    // Cast vote
+    // TODO fix Illegal bigint value during serialization.
+    //proposal_voted_by::write((prop_id, caller_addr), opinion);
+    if opinion == MINUS_ONE {
+        let curr_votes: u128 = proposal_total_nay::read(prop_id).try_into().unwrap();
+        let new_votes: u128 = curr_votes + caller_balance;
+        assert(new_votes >= 0_u128, 'new_votes must be non-negative');
+        proposal_total_nay::write(prop_id, new_votes.into());
+    } else {
+        let curr_votes: u128 = proposal_total_nay::read(prop_id).try_into().unwrap();
+        let new_votes: u128 = curr_votes + caller_balance;
+        assert(new_votes >= 0_u128, 'new_votes must be non-negative');
+        proposal_total_yay::write(prop_id, new_votes.into());
+    }
+    Governance::Voted(prop_id, caller_addr, opinion);
+}
+
+</c1><c0>
+
+func check_proposal_passed_express{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
+    prop_id: felt
+) -> (res: felt) {
+    alloc_locals;
+    let (gov_token_addr) = governance_token_address.read();
+    let (yay_tally) = proposal_total_yay.read(prop_id);
+
+    let (total_eligible_votes_from_tokenholders) = IERC20.totalSupply(contract_address=gov_token_addr);
+    let TWO = Uint256(low = 2, high = 0);
+    // Multiply total votes by 2
+    let (intermediate, carry) = uint256_mul(total_eligible_votes_from_tokenholders, TWO);
+    with_attr error_message("check_proposal_passed_express: overflow"){ 
+        assert carry.low = 0;
+        assert carry.high = 0;
+    }
+    let THREE = Uint256(low = 3, high = 0);
+    // Now divide by 3
+    let (minimum_for_express, _) = uint256_unsigned_div_rem(intermediate, THREE);
+
+    let yay_tally_uint256 = intToUint256(yay_tally);
+    let (cmp_res) = uint256_lt(minimum_for_express, yay_tally_uint256);
+    if(cmp_res == 1){
+        return (res=1);
+    }
+    return (res=0);
+}
+
+</c0><c1>
+
+fn check_proposal_passed_express(prop_id: felt252) -> u8 {
+    let gov_token_addr = governance_token_address::read();
+    let yay_tally_felt: felt252 = proposal_total_yay::read(prop_id);
+    let yay_tally: u128 = yay_tally_felt.try_into().unwrap();
+    let total_eligible_votes_from_tokenholders_u256: u256 = IERC20Dispatcher {
+        contract_address: gov_token_addr
+    }.totalSupply();
+    assert(total_eligible_votes_from_tokenholders_u256.high == 0_u128, 'totalSupply weirdly high');
+    let total_eligible_votes_from_tokenholders: u128 = total_eligible_votes_from_tokenholders_u256.low;
+
+    let minimum_for_express: u128 = total_eligible_votes_from_tokenholders * 2_u128 / 3_u128;
+
+    // Check if yay_tally >= minimum_for_express
+    if yay_tally >= minimum_for_express {
+        1_u8
+    } else {
+        0_u8
+    }
+}
+
+</c1>
+
+Now, ChatGPT, is everything clear about the syntax differences?
