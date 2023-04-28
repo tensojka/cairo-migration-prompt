@@ -2,7 +2,7 @@
 
 How to use:
 
-First put in the preamble, it should respond and summarize how it understands the differences.
+First put in the preamble, it should respond and summarize how it understands the differences. This helps it with the migrations later down the line.
 
 Then put in your Cairo 0 code wrapped in \<c0\> YOUR CODE HERE \</c0\> \<c1\>
 
