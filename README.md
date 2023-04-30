@@ -6,7 +6,7 @@ First put in `preamble.txt`, it should respond and summarize how it understands 
 
 Then put in your Cairo 0 code like this:
 
-`Now rewrite FUNCTION_NAME (below) to c1.
+`Now rewrite FUNCTION_NAME (below) to c1. No talk; just go.
 <c0> YOUR CODE HERE </c0><c1>`
 
 Then it will better that it should migrate the code, sometimes it tries to summarize it, this is due to the heavy instruction tuning. The nat.dev interface (below) is a bit better for this (you can leave out the 'Now rewrite..' bit) as it doesn't contain the system prompt 'You are ChatGPT, a helpful assistant yada yada'.
