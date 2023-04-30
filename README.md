@@ -2,7 +2,7 @@
 
 ## How to use:
 
-First put in `preamble.txt`, it should respond and summarize how it understands the differences. This helps it with the migrations later down the line and avoids a hidden limit on message length that is present in ChatGPT.
+First put in `preamble.txt`, it should respond and summarize how it understands the differences. This helps it with the migrations later down the line and avoids a hidden limit on message length (around 3000 tokens, if you go over the rest is just ignored) that is present in ChatGPT.
 
 Then put in your Cairo 0 code like this:
 
