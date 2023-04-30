@@ -3,22 +3,27 @@ Migrating from c0, a smart contract language inspired by Python, to c1, which is
 c1 ( = <c1>) has a few peculiarities you must attend to. Comparison operations are not supported on the felt (c0) = felt252 (c1) data type, you must convert to uint first. As u256 is represented as two separate felts, it's better to use u128 for efficiency. Arithmetic operations are defined only between variables of the same data type, not between say u64 and u128, so conversions are often needed. There are the following unsigned integer data types in c1: u8 u16 u32 u64 u128 u256, they automatically check for overflows.
 
 <c0>
-
+with_attr error_message("weird, var > 2"){
+    assert_nn_le(var, 2);
+}
+<c0><c1>
+assert(var <= 2, 'weird, var > 2');
+</c1><c0>
 func get_proposal_details{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
     prop_id: felt
 ) -> (res: PropDetails) {
     let (res) = proposal_details.read(prop_id);
     return (res=res);
 }
-
 </c0><c1>
-
 fn get_proposal_details(prop_id: felt252) -> PropDetails {
     proposal_details::read(prop_id)
 }
-
 </c1><c0>
-
+felt
+</c0><c1>
+felt252
+</c1><c0>
 func get_vote_counts{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
     prop_id: felt
 ) -> (res: VoteCounts) {
@@ -26,18 +31,14 @@ func get_vote_counts{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check
     let (nay) = proposal_total_nay.read(prop_id);
     return (res=VoteCounts(yay=yay, nay=nay));
 }
-
 </c0><c1>
-
 fn get_vote_counts(prop_id: felt252) -> (felt252, felt252) {
     let yay = proposal_total_yay::read(prop_id);
     let nay = proposal_total_nay::read(prop_id);
 
     (yay, nay)
 }
-
 </c1><c0>
-
 func get_free_prop_id{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
 ) -> (freeid: felt) {
     return _get_free_prop_id(0);
@@ -53,12 +54,9 @@ func _get_free_prop_id{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_che
         return _get_free_prop_id(currid + 1);
     }
 }
-
 </c0><c1>
-
 fn get_free_prop_id() -> felt252 {
     _get_free_prop_id(0)
-}
 
 fn _get_free_prop_id(currid: felt252) -> felt252 {
     let res = proposal_vote_ends::read(currid);
@@ -69,9 +67,7 @@ fn _get_free_prop_id(currid: felt252) -> felt252 {
         _get_free_prop_id(currid + 1)
     }
 }
-
 </c1><c0>
-
 func assert_correct_contract_type{range_check_ptr}(contract_type: ContractType) {
     with_attr error_message("wrong contract type, must be 0, 1 or 2"){
         assert_nn_le(contract_type, 2); // either 0, 1 or 2
@@ -93,9 +89,7 @@ func assert_voting_in_progress{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, r
     }
     return ();
 }
-
 </c0><c1>
-
 fn assert_correct_contract_type(contract_type: ContractType) {
     let contract_type_u: u64 = contract_type.try_into().unwrap();
     assert(contract_type_u <= 2_u64, 'invalid contract type')
@@ -110,9 +104,7 @@ fn assert_voting_in_progress(prop_id: felt252) {
 
     assert(end_block_number > current_block_number, 'voting concluded')
 }
-
 </c1><c0>
-
 func submit_proposal{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
     impl_hash: felt, to_upgrade: ContractType
 ) -> (prop_id: felt) {
@@ -148,9 +140,7 @@ func submit_proposal{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check
 
     return (prop_id=prop_id);
 }
-
 </c0><c1>
-
 fn submit_proposal(impl_hash: felt252, to_upgrade: ContractType) -> felt252 {
     assert_correct_contract_type(to_upgrade);
     let govtoken_addr = governance_token_address::read();
@@ -176,9 +166,7 @@ fn submit_proposal(impl_hash: felt252, to_upgrade: ContractType) -> felt252 {
     Governance::Proposed(prop_id, impl_hash, to_upgrade);
     prop_id
 }
-
 </c1><c0>
-
 func vote{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
     prop_id: felt,
     opinion: felt
@@ -221,9 +209,7 @@ func vote{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
     Voted.emit(prop_id, caller_addr, opinion);
     return ();
 }
-
 </c0><c1>
-
 fn vote(prop_id: felt252, opinion: felt252) {
     // Checks
     // This is quite awful and a mistake by me, will be fixed down the line.
@@ -260,9 +246,7 @@ fn vote(prop_id: felt252, opinion: felt252) {
     }
     Governance::Voted(prop_id, caller_addr, opinion);
 }
-
 </c1><c0>
-
 func check_proposal_passed_express{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
     prop_id: felt
 ) -> (res: felt) {
@@ -289,9 +273,7 @@ func check_proposal_passed_express{syscall_ptr: felt*, pedersen_ptr: HashBuiltin
     }
     return (res=0);
 }
-
 </c0><c1>
-
 fn check_proposal_passed_express(prop_id: felt252) -> u8 {
     let gov_token_addr = governance_token_address::read();
     let yay_tally_felt: felt252 = proposal_total_yay::read(prop_id);
@@ -311,7 +293,6 @@ fn check_proposal_passed_express(prop_id: felt252) -> u8 {
         0_u8
     }
 }
-
 </c1>
 
 Now, ChatGPT, is everything clear about the syntax differences?
