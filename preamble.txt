@@ -1,24 +1,9 @@
-Migrating from c0, a smart contract language inspired by Python, to c1, which is a complete rewrite, inspired by Rust.
-
-c1 ( = <c1>) has a few peculiarities you must attend to. Comparison operations are not supported on the felt (c0) = felt252 (c1) data type, you must convert to uint first. As u256 is represented as two separate felts, it's better to use u128 for efficiency. Arithmetic operations are defined only between variables of the same data type, not between say u64 and u128, so conversions are often needed. There are the following unsigned integer data types in c1: u8 u16 u32 u64 u128 u256, they automatically check for overflows.
-
 <c0>
 with_attr error_message("weird, var > 2"){
     assert_nn_le(var, 2);
 }
 <c0><c1>
 assert(var <= 2, 'weird, var > 2');
-</c1><c0>
-func get_proposal_details{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
-    prop_id: felt
-) -> (res: PropDetails) {
-    let (res) = proposal_details.read(prop_id);
-    return (res=res);
-}
-</c0><c1>
-fn get_proposal_details(prop_id: felt252) -> PropDetails {
-    proposal_details::read(prop_id)
-}
 </c1><c0>
 felt
 </c0><c1>
@@ -124,7 +109,6 @@ func submit_proposal{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check
         assert_uint256_lt(total_supply, caller_balance_multiplied);
     }
 
-    // Write state changes to storage vars
     let (prop_id) = get_free_prop_id();
     let prop_details = PropDetails(
         impl_hash=impl_hash,
@@ -190,7 +174,6 @@ func vote{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
         assert_not_zero(caller_balance.low);
     }
 
-    
     assert_voting_in_progress(prop_id);
 
     // Cast vote
@@ -231,8 +214,7 @@ fn vote(prop_id: felt252, opinion: felt252) {
     assert_voting_in_progress(prop_id);
 
     // Cast vote
-    // TODO fix Illegal bigint value during serialization.
-    //proposal_voted_by::write((prop_id, caller_addr), opinion);
+    proposal_voted_by::write((prop_id, caller_addr), opinion);
     if opinion == MINUS_ONE {
         let curr_votes: u128 = proposal_total_nay::read(prop_id).try_into().unwrap();
         let new_votes: u128 = curr_votes + caller_balance;
@@ -295,4 +277,8 @@ fn check_proposal_passed_express(prop_id: felt252) -> u8 {
 }
 </c1>
 
-Now, ChatGPT, is everything clear about the syntax differences?
+Above is are examples of code rewritten from c0, a smart contract language inspired by Python, to c1, very different, inspired by Rust.
+
+c1 ( = <c1>) has a few peculiarities you must attend to. Comparison operations are not supported on the felt (c0) = felt252 (c1) data type, you must convert to uint first. As u256 is represented as two separate felts, it's better to use u128 for efficiency. Arithmetic operations are defined only between variables of the same data type, not between say u64 and u128, so conversions are often needed. There are the following unsigned integer data types in c1: u8 u16 u32 u64 u128 u256, they automatically check for overflows.
+
+Now, is everything clear about the syntax differences?
