@@ -216,13 +216,13 @@ func add_and_check_bounds{range_check_ptr}(a: felt, b: felt) -> (res: felt) {
     return (res=sum);
 }
 </c0><c1>
-    fn add_and_check_bounds(a: felt252, b: felt252) -> felt252 {
-        let a_u128: u128 = a.try_into().unwrap();
-        let b_u128: u128 = b.try_into().unwrap();
+fn add_and_check_bounds(a: felt252, b: felt252) -> felt252 {
+    let a_u128: u128 = a.try_into().unwrap();
+    let b_u128: u128 = b.try_into().unwrap();
 
-        let sum_u128 = (a_u128 + b_u128).expect('addition overflow');
-        sum_u128.into()
-    }
+    let sum_u128 = (a_u128 + b_u128).expect('addition overflow');
+    sum_u128.into()
+}
 </c1><c0>
 func fibonacci{range_check_ptr}(n: felt) -> (fib: felt) {
     if (n == 0) {
