@@ -32,7 +32,7 @@ func get_free_prop_id{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_chec
 func _get_free_prop_id{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
     currid: felt
 ) -> (freeid: felt) {
-    let (res) = proposal_vote_ends.read(currid); // shorter values than _details
+    let (res) = proposal_vote_ends.read(currid);
     if (res == 0) {
         return (freeid = currid);
     }else{
@@ -67,7 +67,6 @@ func assert_voting_in_progress{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, r
     }
     let (curr_block_number) = get_block_number();
     with_attr error_message("voting already concluded"){
-        // yes truly no assert_lt in Cairo 0.10.
         let block_diff = end_block_number - curr_block_number;
         assert_not_zero(block_diff);
         assert_nn(block_diff);
@@ -90,73 +89,12 @@ fn assert_voting_in_progress(prop_id: felt252) {
     assert(end_block_number > current_block_number, 'voting concluded')
 }
 </c1><c0>
-func submit_proposal{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
-    impl_hash: felt, to_upgrade: ContractType
-) -> (prop_id: felt) {
-
-    assert_correct_contract_type(to_upgrade);
-    let (gov_token_addr) = governance_token_address.read();
-    let (caller_addr) = get_caller_address();
-
-    let (caller_balance) = IERC20.balanceOf(contract_address=gov_token_addr, account=caller_addr);
-    let (total_supply) = IERC20.totalSupply(contract_address=gov_token_addr);
-
-    with_attr error_message("Not enough tokens to submit proposal") {
-        let share = Uint256(low = NEW_PROPOSAL_QUORUM, high = 0);
-        let (caller_balance_multiplied, carry) = uint256_mul(caller_balance, share);
-        assert carry.low = 0;
-        assert carry.high = 0;
-        assert_uint256_lt(total_supply, caller_balance_multiplied);
-    }
-
-    let (prop_id) = get_free_prop_id();
-    let prop_details = PropDetails(
-        impl_hash=impl_hash,
-        to_upgrade=to_upgrade
-    );
-    proposal_details.write(prop_id, prop_details);
-
-    let (curr_block_number) = get_block_number();
-    let end_block_number = curr_block_number + PROPOSAL_VOTING_TIME_BLOCKS;
-    proposal_vote_ends.write(prop_id, end_block_number);
-
-    Proposed.emit(prop_id, impl_hash, to_upgrade);
-
-    return (prop_id=prop_id);
-}
-</c0><c1>
-fn submit_proposal(impl_hash: felt252, to_upgrade: ContractType) -> felt252 {
-    assert_correct_contract_type(to_upgrade);
-    let govtoken_addr = governance_token_address::read();
-    let caller = get_caller_address();
-    let caller_balance: u128 = IERC20Dispatcher {
-        contract_address: govtoken_addr
-    }.balanceOf(caller).low;
-    let total_supply = IERC20Dispatcher { contract_address: govtoken_addr }.totalSupply();
-    let res: u256 = as_u256(
-        0_u128, caller_balance * constants::NEW_PROPOSAL_QUORUM
-    ); // TODO use such multiplication that u128 * u128 = u256
-    assert(total_supply < res, 'not enough tokens to submit');
-
-    let prop_id = get_free_prop_id();
-    let prop_details = PropDetails { impl_hash: impl_hash, to_upgrade: to_upgrade };
-    proposal_details::write(prop_id, prop_details);
-
-    let current_block_number: u64 = get_block_info().unbox().block_number;
-    let end_block_number: BlockNumber = (current_block_number
-        + constants::PROPOSAL_VOTING_TIME_BLOCKS).into();
-    proposal_vote_ends::write(prop_id, end_block_number);
-
-    Governance::Proposed(prop_id, impl_hash, to_upgrade);
-    prop_id
-}
-</c1><c0>
 func vote{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
     prop_id: felt,
     opinion: felt
 ) {
     // Checks
-    with_attr error_message("opinion must be either 1 = yay or -1 = nay"){
+    with_attr error_message("opinion must be either 1 or -1"){
         assert_not_zero(opinion);
         assert_le(opinion, 1);
         assert_le(-1, opinion);
@@ -167,10 +105,9 @@ func vote{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
     with_attr error_message("already voted"){
         assert curr_votestatus = 0;
     }
-    
     let (caller_balance) = IERC20.balanceOf(contract_address=gov_token_addr, account=caller_addr);
     with_attr error_message("governance token balance is zero or erroneous"){
-        assert caller_balance.high = 0; // we store votes in felts, conversions will be done with C1.0 rewrite
+        assert caller_balance.high = 0;
         assert_not_zero(caller_balance.low);
     }
 
@@ -238,14 +175,12 @@ func check_proposal_passed_express{syscall_ptr: felt*, pedersen_ptr: HashBuiltin
 
     let (total_eligible_votes_from_tokenholders) = IERC20.totalSupply(contract_address=gov_token_addr);
     let TWO = Uint256(low = 2, high = 0);
-    // Multiply total votes by 2
     let (intermediate, carry) = uint256_mul(total_eligible_votes_from_tokenholders, TWO);
     with_attr error_message("check_proposal_passed_express: overflow"){ 
         assert carry.low = 0;
         assert carry.high = 0;
     }
     let THREE = Uint256(low = 3, high = 0);
-    // Now divide by 3
     let (minimum_for_express, _) = uint256_unsigned_div_rem(intermediate, THREE);
 
     let yay_tally_uint256 = intToUint256(yay_tally);
@@ -263,7 +198,6 @@ fn check_proposal_passed_express(prop_id: felt252) -> u8 {
     let total_eligible_votes_from_tokenholders_u256: u256 = IERC20Dispatcher {
         contract_address: gov_token_addr
     }.totalSupply();
-    assert(total_eligible_votes_from_tokenholders_u256.high == 0_u128, 'totalSupply weirdly high');
     let total_eligible_votes_from_tokenholders: u128 = total_eligible_votes_from_tokenholders_u256.low;
 
     let minimum_for_express: u128 = total_eligible_votes_from_tokenholders * 2_u128 / 3_u128;
@@ -275,10 +209,55 @@ fn check_proposal_passed_express(prop_id: felt252) -> u8 {
         0_u8
     }
 }
+</c1><c0>
+func add_and_check_bounds{range_check_ptr}(a: felt, b: felt) -> (res: felt) {
+    let sum = a + b;
+    assert_nn(sum);
+    return (res=sum);
+}
+</c0><c1>
+    fn add_and_check_bounds(a: felt252, b: felt252) -> felt252 {
+        let a_u128: u128 = a.try_into().unwrap();
+        let b_u128: u128 = b.try_into().unwrap();
+
+        let sum_u128 = (a_u128 + b_u128).expect('addition overflow');
+        sum_u128.into()
+    }
+</c1><c0>
+func fibonacci{range_check_ptr}(n: felt) -> (fib: felt) {
+    if (n == 0) {
+        return (fib=0);
+    }
+    if (n == 1) {
+        return (fib=1);
+    }
+
+    let fib1 = fibonacci(n - 1);
+    let fib2 = fibonacci(n - 2);
+    let sum = fib1.fib + fib2.fib;
+    assert_nn(sum);
+    return (fib=sum);
+}
+</c0><c1>
+fn fibonacci(n: u64) -> u64 {
+    if n == 0 {
+        0
+    } else if n == 1 {
+        1
+    } else {
+        let n_minus_1 = n - 1;
+        let n_minus_2 = n - 2;
+        let fib1 = fibonacci(n_minus_1);
+        let fib2 = fibonacci(n_minus_2);
+        let sum = fib1 + fib2;
+        sum
+    }
+}
 </c1>
+
 
 Above is are examples of code rewritten from c0, a smart contract language inspired by Python, to c1, very different, inspired by Rust.
 
 c1 ( = <c1>) has a few peculiarities you must attend to. Comparison operations are not supported on the felt (c0) = felt252 (c1) data type, you must convert to uint first. As u256 is represented as two separate felts, it's better to use u128 for efficiency. Arithmetic operations are defined only between variables of the same data type, not between say u64 and u128, so conversions are often needed. There are the following unsigned integer data types in c1: u8 u16 u32 u64 u128 u256, they automatically check for overflows.
 
-Now, is everything clear about the syntax differences?
+Now, is everything clear about the syntax differences? Look at the examples above.
